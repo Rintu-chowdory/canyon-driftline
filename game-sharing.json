@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 2,
+  "title": "Canyon Driftline",
+  "description": "Drift, boost and jump through a vast sunlit canyon in a fast low-poly arcade racer. Race two AI rivals, battle a friend in split-screen, build tracks in the Track Lab, or chase up to three online ghosts.",
+  "defaultCaptions": {
+    "x": "Charged drifts, perfect boost pads and trick landings through a giant sunlit canyon. Every car is equal — only your line matters. Play Canyon Driftline in your browser.",
+    "facebook": "Canyon Driftline is a fast low-poly arcade racer: three laps, 16 gates a lap, equal cars and pure skill. Race AI rivals, a friend in split-screen, or online ghosts.",
+    "reddit": "Canyon Driftline — a browser arcade racer with charged drifts, slipstream, ramps and fair counterplay items. Solo, split-screen, Track Lab and online ghosts.",
+    "discord": "Race me in Canyon Driftline! Equal cars, big canyon, online ghost rooms for up to three players."
+  },
+  "assets": {
+    "favicon": "assets/share/favicon.png"
+  }
+}
