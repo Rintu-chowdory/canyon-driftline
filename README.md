@@ -92,3 +92,15 @@ resets it only at the next run using that run's active values. `Game` snapshots 
 `RunState.unranked`; local results cannot save such runs. Preserve this guard when changing
 scoring. When adding online leaderboards, skip submissions for unranked runs and enforce
 eligibility in the authoritative server too; client flags are not proof of a fair score.
+
+## Mobile Quality-Tiers
+
+Die Grafikqualität wird beim ersten Start anhand von Pointer-Typ, CPU-Kernen, optionalem `deviceMemory` und dem Save-Data-Hinweis vorgeschlagen. Der gespeicherte Wert kann in den Einstellungen überschrieben werden.
+
+- **Low:** keine Schatten/Bloom-Effekte, Render-Scale bis 58 %, reduzierte Partikel und höchstens zwei parallele Asset-Downloads
+- **Medium:** mobilefreundliche Pixel-Ratio, Render-Scale bis 68 %, kein Bloom auf Mobilgeräten, Anisotropie 2 und zwei parallele Asset-Downloads
+- **High:** Desktop-Qualität mit Bloom, 2048er Schattenkarte und bis zu vier parallelen Asset-Downloads
+
+Während des Spiels wird die Frame-Time geglättet. Bei anhaltender Belastung sinkt die Render-Scale stufenweise; nach stabiler schneller Darstellung steigt sie langsam wieder bis zum Tier-Limit. Simulationsrate und Rennlogik bleiben unverändert.
+
+Die zentrale Implementierung liegt in `src/engine/quality.ts`; Renderer, Asset-Lader und Effektbudget verwenden dieselben Profile. Die Quality-Tier-Tests liegen in `tests/quality.test.ts`.
