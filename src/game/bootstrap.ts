@@ -36,7 +36,10 @@ export async function startGame(progress: (p: number) => void): Promise<void> {
   const audio = new Audio()
   const net = new GhostNet()
   const renderer = new Renderer(canvas, save.data.quality)
-  assets.maxAnisotropy = Math.min(8, renderer.gl.capabilities.getMaxAnisotropy())
+  assets.configure({
+    maxAnisotropy: Math.min(renderer.anisotropyLimit, renderer.gl.capabilities.getMaxAnisotropy()),
+    concurrency: renderer.assetConcurrency,
+  })
   // Boot stage = title essentials only (logo + menu blips). Everything else streams afterwards.
   const bootOff = assets.onProgress((stage, done, total) => {
     if (stage === 'boot') progress(0.1 + (done / total) * 0.25)
@@ -87,7 +90,7 @@ export async function startGame(progress: (p: number) => void): Promise<void> {
     if (!s) return
     const d = save.data
     for (const cam of s.cams) cam.shakeEnabled = d.cameraShake
-    s.fx.setBudget(d.quality === 'low' ? 0.45 : d.quality === 'medium' ? 0.75 : 1)
+    s.fx.setBudget(renderer.effectBudget)
     const names = s.humans.map(h => s.racers[h].name)
     const keys = s.humans.map(h => keyHints(s.racers[h].device ?? 'auto', input))
     ui.hud.setup(s, names, keys, !d.controlsSeen)
@@ -135,6 +138,11 @@ export async function startGame(progress: (p: number) => void): Promise<void> {
       apply(save.data)
       if (qualityChanged) {
         renderer.applyQuality(save.data.quality)
+        assets.configure({
+          maxAnisotropy: Math.min(renderer.anisotropyLimit, renderer.gl.capabilities.getMaxAnisotropy()),
+          concurrency: renderer.assetConcurrency,
+        })
+        if (app.session) app.session.fx.setBudget(renderer.effectBudget)
         app.setQuality()
       }
       if (net.status === 'connected' && (patch.chassis !== undefined || patch.livery !== undefined || patch.playerName !== undefined)) {
@@ -186,6 +194,7 @@ export async function startGame(progress: (p: number) => void): Promise<void> {
     step: () => app.step(),
     render: (alpha, dt) => {
       input.update()
+      renderer.sampleFrame(dt)
       if (input.consume('pause')) {
         if (app.mode === 'race' && ui.screen === 'hud') pause()
         else if (app.mode === 'paused' && ui.screen === 'pause' && !ui.modalOpen) resume()

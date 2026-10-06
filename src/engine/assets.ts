@@ -59,12 +59,23 @@ export class Assets {
   private active = 0
   private busy = false
   private priority: string[] = []
+  private concurrency = 4
   /** Stages allowed to download right now (extra only in calm moments). */
   private readonly open = new Set<Stage>(['boot'])
   maxAnisotropy = 4
 
   constructor() {
     for (const e of this.entries) this.state.set(e.key, 'queued')
+  }
+
+  /** Apply a device-specific loader profile before boot starts. */
+  configure(options: { maxAnisotropy?: number; concurrency?: number }): void {
+    if (options.maxAnisotropy !== undefined && Number.isFinite(options.maxAnisotropy)) {
+      this.maxAnisotropy = Math.max(1, Math.min(8, options.maxAnisotropy))
+    }
+    if (options.concurrency !== undefined && Number.isFinite(options.concurrency)) {
+      this.concurrency = Math.max(1, Math.min(4, Math.floor(options.concurrency)))
+    }
   }
 
   onProgress(fn: Listener): () => void {
@@ -150,7 +161,7 @@ export class Assets {
   }
 
   private pump(): void {
-    const limit = this.busy ? 1 : 4
+    const limit = this.busy ? 1 : this.concurrency
     while (this.active < limit) {
       const e = this.next()
       if (!e) return

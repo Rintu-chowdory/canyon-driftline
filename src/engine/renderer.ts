@@ -4,21 +4,11 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import type { Quality } from './save'
+import { deviceHintsFromNavigator, profileForQuality, suggestQuality as suggestDeviceQuality, type QualityProfile } from './quality'
 
-type Preset = { pixelRatio: number; shadows: boolean; shadowMap: number; bloom: boolean; antialias: boolean; splitPixelRatio: number }
-export const QUALITY_PRESETS: Record<Quality, Preset> = {
-  low: { pixelRatio: 1, shadows: false, shadowMap: 512, bloom: false, antialias: false, splitPixelRatio: 0.85 },
-  medium: { pixelRatio: 1.5, shadows: true, shadowMap: 1024, bloom: false, antialias: true, splitPixelRatio: 1 },
-  high: { pixelRatio: 2, shadows: true, shadowMap: 2048, bloom: true, antialias: true, splitPixelRatio: 1.25 },
-}
-
-/** Pick a starting quality from device hints; the player can override it in Settings. */
-export function suggestQuality(): Quality {
-  const coarse = matchMedia('(pointer: coarse)').matches
-  const cores = navigator.hardwareConcurrency ?? 4
-  if (coarse || cores <= 4) return 'medium'
-  return 'high'
-}
+export { profileForQuality }
+export const QUALITY_PRESETS = { low: profileForQuality('low', { coarse: false, cores: 8, memoryGB: undefined, dpr: 1, saveData: false }), medium: profileForQuality('medium', { coarse: false, cores: 8, memoryGB: undefined, dpr: 1, saveData: false }), high: profileForQuality('high', { coarse: false, cores: 8, memoryGB: undefined, dpr: 1, saveData: false }) } as const
+export function suggestQuality(): Quality { return suggestDeviceQuality(deviceHintsFromNavigator()) }
 
 /** A camera drawn into a rectangle of the canvas (fractions, origin bottom-left). */
 export interface View {
@@ -32,38 +22,49 @@ export interface View {
 }
 
 /**
- * Owns the WebGL renderer, the optional bloom chain (single view only) and resize handling.
+ * Owns WebGL plus the mobile quality policy. The saved low/medium/high setting controls
+ * feature availability; renderScale adapts within that tier when sustained frame time changes.
  */
 export class Renderer {
   readonly gl: THREE.WebGLRenderer
   private composer?: EffectComposer
   private bloom?: UnrealBloomPass
-  private preset: Preset
+  private preset: QualityProfile
   private scene?: THREE.Scene
   private camera?: THREE.PerspectiveCamera
   private split = false
+  private renderScale: number
+  private frameEma = 1 / 60
+  private slowFrames = 0
+  private fastFrames = 0
+  private adjustCooldown = 0
 
   constructor(readonly canvas: HTMLCanvasElement, quality: Quality) {
-    this.preset = QUALITY_PRESETS[quality]
+    this.preset = profileForQuality(quality, deviceHintsFromNavigator())
+    this.renderScale = this.preset.renderScale
     this.gl = new THREE.WebGLRenderer({ canvas, antialias: this.preset.antialias, powerPreference: 'high-performance' })
     this.gl.outputColorSpace = THREE.SRGBColorSpace
     this.gl.toneMapping = THREE.ACESFilmicToneMapping
     this.gl.toneMappingExposure = 1.0
     this.gl.shadowMap.type = THREE.PCFShadowMap
     this.applyQuality(quality)
-    window.addEventListener('resize', () => this.resize())
+    window.addEventListener('resize', () => this.resize(), { passive: true })
   }
 
-  get shadowsEnabled(): boolean {
-    return this.preset.shadows
-  }
-
-  get shadowMapSize(): number {
-    return this.preset.shadowMap
-  }
+  get qualityProfile(): QualityProfile { return this.preset }
+  get shadowsEnabled(): boolean { return this.preset.shadows }
+  get shadowMapSize(): number { return this.preset.shadowMap }
+  get anisotropyLimit(): number { return this.preset.anisotropy }
+  get assetConcurrency(): number { return this.preset.assetConcurrency }
+  get effectBudget(): number { return Math.max(0.28, this.preset.particleBudget * (this.renderScale / this.preset.renderScale) ** 2) }
+  get currentRenderScale(): number { return this.renderScale }
 
   applyQuality(quality: Quality): void {
-    this.preset = QUALITY_PRESETS[quality]
+    this.preset = profileForQuality(quality, deviceHintsFromNavigator())
+    this.renderScale = this.preset.renderScale
+    this.slowFrames = 0
+    this.fastFrames = 0
+    this.adjustCooldown = 0
     this.gl.shadowMap.enabled = this.preset.shadows
     this.bloom?.dispose()
     this.composer?.dispose()
@@ -73,9 +74,42 @@ export class Renderer {
     this.resize()
   }
 
+  /** Feed measured frame time once per animation frame; only sustained pressure changes scale. */
+  sampleFrame(dt: number): void {
+    if (!Number.isFinite(dt) || dt <= 0 || dt > 0.5) return
+    this.frameEma = this.frameEma * 0.92 + dt * 0.08
+    this.adjustCooldown = Math.max(0, this.adjustCooldown - dt)
+    if (this.adjustCooldown > 0) return
+    if (this.frameEma > 1 / 43) {
+      this.slowFrames += 1
+      this.fastFrames = 0
+    } else if (this.frameEma < 1 / 57) {
+      this.fastFrames += 1
+      this.slowFrames = 0
+    } else {
+      this.slowFrames = Math.max(0, this.slowFrames - 1)
+      this.fastFrames = Math.max(0, this.fastFrames - 1)
+    }
+    if (this.slowFrames >= 24 && this.renderScale > this.preset.minRenderScale + 0.001) {
+      this.setRenderScale(Math.max(this.preset.minRenderScale, this.renderScale - 0.08))
+      this.slowFrames = 0
+      this.adjustCooldown = 1.5
+    } else if (this.fastFrames >= 120 && this.renderScale < this.preset.renderScale - 0.001) {
+      this.setRenderScale(Math.min(this.preset.renderScale, this.renderScale + 0.05))
+      this.fastFrames = 0
+      this.adjustCooldown = 2
+    }
+  }
+
+  private setRenderScale(scale: number): void {
+    this.renderScale = Math.max(this.preset.minRenderScale, Math.min(this.preset.renderScale, scale))
+    this.updatePixelRatio()
+    this.resize()
+  }
+
   private updatePixelRatio(): void {
     const pr = this.split ? this.preset.splitPixelRatio : this.preset.pixelRatio
-    this.gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, pr))
+    this.gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, pr * this.renderScale))
   }
 
   private ensureComposer(scene: THREE.Scene, camera: THREE.PerspectiveCamera): EffectComposer | undefined {
