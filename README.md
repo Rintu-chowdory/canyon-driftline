@@ -1,8 +1,28 @@
-# game-3d starter (three.js + Rapier)
+# Canyon Driftline
 
-A complete, small 3D game — **Sky Cores**: run, jump and dash across floating islands to collect
-every energy core before the clock runs out, avoiding patrol drones. It exists to be *changed*:
-the engine layer is fixed scaffolding, the game layer is the part you rewrite.
+Browserbasiertes Three.js-Renn- und Driftspiel, remixt aus dem Canyon-Circuit-Showcase.
+
+## Installation und lokaler Start
+
+Voraussetzungen: Node.js 22 oder kompatibel, pnpm 10 und ein WebGL-fähiger Browser.
+
+```bash
+git clone https://github.com/Rintu-chowdory/canyon-driftline.git
+cd canyon-driftline
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+Die lokale Vorschau läuft standardmäßig unter `http://localhost:5173`. Für einen Produktionsbuild:
+
+```bash
+pnpm typecheck
+pnpm test -- --run
+pnpm build
+pnpm preview
+```
+
+`pnpm build` erzeugt den optimierten Build in `dist/` und prüft zusätzlich das Asset-/Bundle-Budget.
 
 ```bash
 pnpm install
@@ -104,3 +124,27 @@ Die Grafikqualität wird beim ersten Start anhand von Pointer-Typ, CPU-Kernen, o
 Während des Spiels wird die Frame-Time geglättet. Bei anhaltender Belastung sinkt die Render-Scale stufenweise; nach stabiler schneller Darstellung steigt sie langsam wieder bis zum Tier-Limit. Simulationsrate und Rennlogik bleiben unverändert.
 
 Die zentrale Implementierung liegt in `src/engine/quality.ts`; Renderer, Asset-Lader und Effektbudget verwenden dieselben Profile. Die Quality-Tier-Tests liegen in `tests/quality.test.ts`.
+
+## Performance-Optimierung für mobile Geräte
+
+Das Quality-Tier-System befindet sich in `src/engine/quality.ts` und wird von Renderer, Asset-Lader und Effektbudget gemeinsam verwendet.
+
+- **Low:** keine Schatten/Bloom-Effekte, Render-Scale bis 58 %, reduzierte Partikel und begrenzte Asset-Parallelität
+- **Medium:** mobile Pixel-Ratio, Render-Scale bis 68 %, kein Bloom auf Mobilgeräten, Anisotropie 2
+- **High:** Desktop-Qualität mit Bloom, 2048er Schattenkarte und bis zu vier parallelen Asset-Downloads
+- **Adaptiv:** bei anhaltend hoher Frame-Time wird die Render-Scale stufenweise reduziert; bei stabiler Performance steigt sie langsam bis zum Tier-Limit
+- **Profiling:** im Browser mit Performance Panel prüfen; bei Bedarf `renderer.gl.info.render.calls`, `triangles`, `memory.geometries` und `memory.textures` instrumentieren
+
+Für reale Gerätevergleiche sollten FPS, 1-%-Low-Frame-Time, CPU-/GPU-Frame-Time, Draw Calls, Dreiecke, Speicher und Ladezeit pro Quality-Tier aufgezeichnet werden. Die bisherige Projektvalidierung bestätigt Build und Tests, ersetzt aber keine Messung auf physischen iOS-/Android-Geräten.
+
+## CI/CD
+
+`.github/workflows/ci-cd.yml` führt bei Pull Requests und Pushes auf `main` automatisch aus:
+
+1. `pnpm install --frozen-lockfile`
+2. TypeScript-Typecheck
+3. Vitest-Tests
+4. Produktionsbuild inklusive Bundle-/Asset-Budget
+5. Upload des `dist/`-Build-Artefakts
+
+Bei einem erfolgreichen Push auf `main` wird der Build zusätzlich über **GitHub Pages** veröffentlicht. Im Repository muss dafür unter **Settings → Pages → Source** die Option **GitHub Actions** aktiviert sein. Pull Requests validieren den Build, deployen aber nicht.
