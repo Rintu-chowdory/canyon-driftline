@@ -9,6 +9,7 @@
     "preview": "vite preview --port 4173 --strictPort",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:performance": "vitest run tests/quality.performance.test.ts --reporter=verbose",
     "smoke": "node scripts/flow-check.mjs",
     "manus:build-source": "tsc --noEmit && vite build && node scripts/check-size.mjs"
   },

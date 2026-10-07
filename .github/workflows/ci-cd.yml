@@ -45,6 +45,9 @@ jobs:
       - name: Test
         run: pnpm test -- --run
 
+      - name: Quality-tier CPU performance benchmark
+        run: pnpm test:performance
+
       - name: Production build
         run: pnpm build
 
